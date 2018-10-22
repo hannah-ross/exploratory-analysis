@@ -1,0 +1,558 @@
+---
+title: "final-report-document"
+author: "Hannah Ross (404626751)"
+date: "December 7, 2016"
+output: html_document
+---
+
+```{r echo=FALSE, message=FALSE}
+library(readr)
+library(readxl)
+library(foreign)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(rvest)
+library(leaflet)
+```
+
+```{r echo=FALSE, message=FALSE}
+celltowers <- read_csv("data/la-cell-towers.csv")
+irs <- read_excel("data/irs-la-zip.xls")
+```
+
+```{r echo=FALSE, cache=TRUE}
+edmunds <- read.dta("data/edmunds.dta")
+
+```
+
+# Introduction
+I have been given three data files about leads submitted to Edmunds.com, IRS tax returns from different zip codes, and cell towers data about Los Angeles cell towers. Using these data files, I will analyze the difference between the price that car manufactures suggest a car be sold for and the price that dealerships list the cars for on Edmunds.com. In investigating whether or not these two price values are statistically significant, I can discern whether or not Edmunds effectively provides good deals on cars for its visitors. Using the IRS data, I will create a linear model to see how a zipcode’s number of dependents and number of returns that are filed as ‘single’ are related. In addition, I will  use the data to investigate which car makes are most popular for leads submitted on Edmunds.com, the months in which leads are most often submitted, and the distribution of the manufacturer suggested prices for different makes. With the IRS data, I will analyze how a zipcodes make up of filers is correlated to its adjusted gross income and number of dependents, and with the Cell Towers data I will find which zipcodes have the most cell towers and I will create a visualization for where the cell towers in the data set are located.
+
+# Data
+### Describe the individual data files
+I have been given three data files, one with Edmunds.com data, one with IRS data, and one with Los Angeles cell towers data. The Edmunds.com data describes leads for cars that are submitted to Edmunds.com. There is info about the cars the leads are submitted for which includes the cars make, model, model year, listed price, and msrp, and also information identifying the location of the dealer's zipcodes.Each observation in the Edmunds data represents a submitted lead. Before cleaning the Edmunds data, there were 2445924 observations with 24 variables, and after cleaning the data of the specified variables, the Edmunds data had 2445924 observations with 16 variables.
+
+The IRS data contains aggregate IRS information for Los Angeles zipcodes that tells us the aggregate  number of single, joint, and head of household filers for each zip code, as well as the aggregate adjusted gross income and number of dependents in the zipcodes. Each observation in the IRS data is a different zip code. Before cleaning the IRS data, there were 288 observations with 111 variables, and after cleaning the IRS data there were 288 variables with 7 variables.
+
+The cell towers data gives us information on the location of cell towers in LA, specifically the data provides information about the zipcode, longitude, latitude, and city that a cell tower is in.  Each observation in the cell towers data is an individual cell tower. Before cleaning the cell towers data, there were 9248 observations with 22 variables, and after cleaning the cell towers data there were 9248 observations with 5 variables.
+
+### Clean the data
+
+#### Cleaning IRS Data
+To clean the IRS data,  I dropped all variables except for N1, MARS1, MARS2, MARS4, NUMDEP, and A00100.  Then, I renamed the variables so that their names gave more indication to what the value of the variables represented. I renamed N1 as returns, MARS1 as single_status, MARS2 as married_status,  MARS4 as head_of_household, and A00100 as AGI.
+
+
+```{r, echo=FALSE, message=FALSE}
+library(plyr)
+irs_new <- select(irs, ZIPCODE, N1, MARS1, MARS2, MARS4, NUMDEP, A00100)
+irs_new <- rename(irs_new, c("N1" = "returns", "MARS1" = "single_status","MARS2" = "married_status","MARS4" = "head_of_household","A00100" = "AGI"))
+irs_new$ZIPCODE <- as.factor(irs_new$ZIPCODE)
+```
+
+#### Cleaning Cell Towers Data
+To clean the Cell Towers data, I first got rid of all variables except for ZIP, city, longitude,and latitude. I kept these variables because I use them further along in my analysis. Then I checked these variables for missing values, and misspellings. Next, I changed the class of the variables to classes that are compatable with their values. I changed the city variable into a factor because the levels for city repeat and are not unique to any one observation (cell tower). 
+
+
+```{r, echo=FALSE, message=FALSE}
+celltowers_new <- select(celltowers, ZIP, org_name, city, longitude, latitude)
+celltowers_new$ZIP <- as.factor(celltowers_new$ZIP)
+celltowers_new$org_name <- as.factor(celltowers_new$org_name)
+#levels(celltowers_new$ZIP)
+celltowers_new$city <- as.factor(celltowers_new$city)
+
+```
+
+#### Cleaning Edmunds Data
+To clean the Edmunds data, I first dropped the variables body type, trim, intcolor, fabric_intcolor, feel, engine, transmission, and new_used. Then I changed the remaining variables into appropriate classes. Model year is a character but should be a factor because there are less model year values than observations. I convert the visitor_key to a factor also because there are only 771,386 different keys for 2445924 observations so each key is not unique to an observation. Make is a character that I convert into a factor because the levels for makes repeat throughout the data set. Then, I notice that there are missing make values for some observations, so I convert all empty make observations into NAs. I also convert model into a factor because the models repeat, and I change the observations with missing values for the model variable into NAs.  I convert style into a factor because they are not unique to each observation, and I see that there are missing value and values labeled “none”. I change the missing values and “none” values for style into NAs. The msrp (asking price by manufacturer) is a character so I convert it into a numeric class so that I can do mean calculations with it later. Ext color, dealer zip, dealer_ma, dealer state, dealer_location_id, and price_promise_flag are all character classes that I change into factors because their values are not unique to each observation. I reassign the missing values and “none” values for these observations as NAs. List price is a character that I converted into a numeric class because I wanted to be able to do mean operations with it further on. Dealer state is a character variable that I converted into a factor because the state values are not unique to each observation. I changed the missing value to NA and I noticed that DC is counted as a state. Lastly, I change the lead_date variable from a character class variable to a Date class variable. I changed it to a date class variable because the hours and minutes for all of the observations are 00:00:00. I converted the lead_date variable into a date using strftime( ), which allows me to extract specific month values about the leads further along in the report.
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new <- select(edmunds, c(lead_id, lead_date, visitor_key, model_year, make, model, style, extcolor, msrp, list_price, price_promise_flag, dealer_location_id, dealer_state, dealer_dma, dealer_zip, dealer_distance))
+edmunds_new$model_year <- as.factor(edmunds_new$model_year) 
+
+#levels(edmunds_new$model_year) ### how do i remove these NAs?
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$visitor_key  <- as.factor(edmunds_new$visitor_key)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$make <- as.factor(edmunds_new$make)
+edmunds_new$make <- as.character(edmunds_new$make)
+edmunds_new$make[edmunds_new$make == ""] <- NA
+edmunds_new$make <- as.factor(edmunds_new$make)
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$model <- as.factor(edmunds_new$model)
+#head(levels(edmunds_new$model))
+edmunds_new$model <- as.character(edmunds_new$model)
+edmunds_new$model[edmunds_new$model == ""] <- NA
+edmunds_new$model <- as.factor(edmunds_new$model)
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$style<- as.factor(edmunds_new$style)
+#head(levels(edmunds_new$style))
+edmunds_new$style <- as.character(edmunds_new$style)
+edmunds_new$style[edmunds_new$style == ""] <- NA
+edmunds_new$style[edmunds_new$style == "none"] <- NA
+edmunds_new$style<- as.factor(edmunds_new$style)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+edmunds_new$msrp <- as.numeric(edmunds_new$msrp)
+#head(unique(edmunds_new$msrp))
+#head(is.na(edmunds_new$msrp))
+#head(edmunds_new$msrp)
+#head(is.na(edmunds_new$msrp))
+edmunds_new_msrp_nona <- edmunds_new$msrp[!is.na(edmunds_new$msrp)]
+#head(edmunds_new_msrp_nona)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+edmunds_new$extcolor <- as.factor(edmunds_new$extcolor)
+#head(levels(edmunds_new$extcolor))
+edmunds_new$extcolor <- as.character(edmunds_new$extcolor)
+edmunds_new$extcolor[edmunds_new$extcolor == ""] <- NA
+edmunds_new$extcolor[edmunds_new$extcolor == "none"] <- NA
+#head(levels(edmunds_new$extcolor))
+edmunds_new$extcolor <- as.factor(edmunds_new$extcolor)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#unique(edmunds_new$list_price)
+edmunds_new$list_price <- as.numeric(edmunds_new$list_price)
+#unique(edmunds_new$list_price)
+#head(levels(edmunds_new$list_price))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#unique(edmunds_new$price_promise_flag)
+edmunds_new$price_promise_flag <- as.factor(edmunds_new$price_promise_flag)
+```
+
+```{r echo=FALSE, message=FALSE}
+edmunds_new$dealer_location_id <- as.factor(edmunds_new$dealer_location_id)
+#head(levels(edmunds_new$dealer_location_id))
+edmunds_new$dealer_location_id <- as.character(edmunds_new$dealer_location_id)
+edmunds_new$dealer_location_id[edmunds_new$dealer_location_id == ""] <- NA
+edmunds_new$dealer_location_id <- as.factor(edmunds_new$dealer_location_id)
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$dealer_state <- as.factor(edmunds_new$dealer_state)
+edmunds_new$dealer_state <- as.character(edmunds_new$dealer_state)
+edmunds_new$dealer_state[edmunds_new$dealer_state == ""] <- NA
+edmunds_new$dealer_state <- as.factor(edmunds_new$dealer_state)
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$dealer_dma <- as.factor(edmunds_new$dealer_dma)
+edmunds_new$dealer_dma <- as.character(edmunds_new$dealer_dma)
+edmunds_new$dealer_dma[edmunds_new$dealer_dma == ""] <- NA
+edmunds_new$dealer_dma <- as.factor(edmunds_new$dealer_dma)
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$dealer_zip <- as.factor(edmunds_new$dealer_zip)
+#head(levels(edmunds_new$dealer_zip))
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_new$lead_date <- strftime(edmunds_new$lead_date, "%y-%m-%d")
+```
+By cleaning the data, we are left primarily with only the variables that we need to use in our analysis. Before the IRS data was cleaned, it had 111 variables, after it is cleaned, it only has 7 variables. Before the cell towers data was cleaned, it had 22 variables, after it is cleaned it only has 5 variables, and before the edmunds data was cleaned, it had 24 variables. After cleaning the edmunds data and dropping the 8 variables specified in the assignment, the data only has 16 variables.
+
+### Summarize
+
+
+#### Summarize Edmunds Data
+
+(1)
+
+```{r, echo=FALSE, message=FALSE}
+#First, I add a new column/variable to the edmunds data for the month of the lead_date variable.
+#Then I make each month a factor, and I rename the values to be abreviations of month names.
+edmunds_newer <- edmunds_new %>%
+  mutate(lead_date_month = month(edmunds_new$lead_date)) 
+edmunds_newer$lead_date_month <- as.factor(edmunds_newer$lead_date_month)
+edmunds_newer$lead_date_month <- revalue(edmunds_newer$lead_date_month, c("1" = "Jan","2" = "Feb" , "3" = "Mar", "4" = "April", "5" = "May", "6" = "June", "7" = "July", "8" = "Aug", "9" = "Sep", "10" = "Oct", "11" = "Nov", "12" = "Dec"))
+```
+
+```{r, echo=FALSE, message=FALSE}
+edmunds_newer %>% 
+  ggplot(aes(lead_date_month), stat = "count") + geom_bar() + 
+  ggtitle("Distribution of Lead Submissions by Month") + labs(x = "Month", y = "Number of Leads") + theme_minimal()
+```
+
+This graph shows the distribution of how many leads were submitted during each month. Most leads were submitted in the beginning of the year, with March being the month with the most lead submissions. This may be because in winter people's cars begin to fail them and they begin searching for another car. Also, in the beginning of the year cars have knew models out so people begin to want the newer cars.
+
+(2) 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#edmunds_new$model_year <- as.factor(edmunds_new$model_year)
+#edmunds_new$model_year <- as.character(edmunds_new$model_year)
+#edmunds_new$model_year[edmunds_new$dealer_dma == "NA"] <- NA
+#edmunds_new$model_year <- as.factor(edmunds_new$model_year)
+edmunds_new$model_year[edmunds_new$model_year == "NA"] <- NA
+#edmunds_new$model_year <- edmunds_new$model_year[(!is.na(edmunds_new$model_year))]
+# head(edmunds_new$model_year[!is.na(edmunds_new$model_year)])
+
+#edmunds_new$model_year <- edmunds_new$model_year[edmunds_new$model_year != "NA"]
+#unique(edmunds_new$model_year[!is.na(edmunds_new$model_year)])
+#unique(edmunds_new$model_year)
+edmunds_new %>% filter(!is.na(model_year)) %>%
+ #group_by(model_year) %>%  
+ggplot() + geom_bar(aes(model_year), stat = "count", fill = "steelblue") + 
+ geom_bar() + ggtitle("Distribution of Model Year Among Leads") + labs(x = "Model Year", y = "Number of Leads") + theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+
+This plot shows the number of leads submitted for cars of each model year. The model years that got the most leads were 2014 and 2015, which makes sense because the years that these leads were submitted were 2014 and 2015, so people were looking to buy new or relatively new cars. 
+
+
+```{r echo=FALSE, message=FALSE}
+edmunds_new$make <- as.character(edmunds_new$make) # first turn into a character to change case
+edmunds_new$make <- tolower(edmunds_new$make) # make all lower case so no duplicates
+edmunds_new$make <- as.factor(edmunds_new$make) # factor to check levels
+#levels(edmunds_new$make) # see that hiphens get in the way for ashton martin and land rover
+edmunds_new$make <- as.character(edmunds_new$make) # first turn into a character to change case
+edmunds_new$make[edmunds_new$make == "land-rover"] <- "land rover" # change letters
+edmunds_new$make[edmunds_new$make == "aston-martin"] <- "aston martin" # change letters
+edmunds_new$make <- as.factor(edmunds_new$make) # factor to check levels
+#levels(edmunds_new$make) # see that land rover switched
+```
+
+(3) 
+
+#### Most Popular Makes
+```{r, echo=FALSE, message=FALSE}
+edmunds_new %>%
+  filter(!is.na(make)) %>%
+  group_by(make) %>%
+  dplyr::summarize(frequency = n()) %>%
+  top_n(5) %>%
+  arrange(desc(frequency)) %>%
+  kable()
+```
+
+This table shows the top 5 makes that had the most leads. The most popular makes of cars that leads were submitted for were honda, toyota, ford, nissan, and subaru. This makes sense because these makes offer affordable and diverse models with sudans, trucks, etc. that appeal to a wide demographic. These makes are more likely to be in people's price range, which explains why they get so many leads.
+
+
+#### Least Popular Makes
+```{r, echo=FALSE, message=FALSE}
+edmunds_new %>%
+  filter(!is.na(make)) %>%
+  group_by(make) %>%
+  dplyr::summarize(frequency = n()) %>%
+  top_n(-5) %>%
+  arrange(frequency) %>%
+  kable()
+```
+
+This table shows the least 5 popular makes that leads were submitted for in descending order. The least popular makes that leads were submitted for were geo, isuzu, oldsmobile, tesla, and maybach.These makes are less popular because they are either expensive luxury vehicles like oldmobile, tesla, and maybach that not many people can afford, or they are makes that are outdated and discontinued like Geo which was a subdivision of chevrolet from only 1987 to 1997.Considering how Geo is not a luxury car and how older models of Geos are not as well preserved or desired, it is understandable why it is not a poplar make.
+
+(4) 
+#### Typical MSRP 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+ ggplot(edmunds_new) + geom_histogram(mapping = aes(x = msrp)) + theme_bw() + ggtitle("Total Distribution of MSRP") 
+
+#sd(edmunds_new$msrp, na.rm = TRUE)
+summary(edmunds_new$msrp)
+
+```
+
+From this histrogram, we can see that a majority of the msrp's of the edmunds data falls within a certain range. As the summary shows, most of the mrsp prices fall within a range that varies from $24,000 and $38,650, with outliers like the maximum msrp being $477,300. The standard deviation of the mrsps is $14,224.3, indicating a fair amount of variation in the msrps of leads which reflects the diverse range in the type of cars that people submit leads for.
+
+```{r echo=FALSE} 
+edmunds_new %>%
+  filter(!is.na(msrp)) %>%
+  filter(make %in% c("honda", "toyota", "ford", "nissan", "subaru")) %>% 
+  ggplot() + geom_histogram(aes(x = msrp), binwidth = 3000) + facet_wrap(~make, ncol = 1) + ggtitle("Distribution of MSRP Prices by Make")
+```
+
+From these graphs of the msrp distribution for the 5 most popular makes, we can see that some makes have have a larger spread in mrsp than others. Subaru's msrp has a small spread, while Ford and Toyota makes have larger spreads. This may be because Ford and Toyota have a more diverse array of cars (ie trucks, sudans, etc.) that vary in both purpose and price, while Subaru cars are more similar in their purpose and targeted demographic. Because of this, there is less of a spread for the msrp's for Subaru makes, and Subaru cars have less flunctuation in price suggested by the facturer.
+
+#### Makes With Highest MSRP
+```{r echo=FALSE, messages=FALSE, warning=FALSE}
+edmunds_new %>%
+  filter(!is.na(msrp)) %>%
+  filter(!is.na(make)) %>%
+  group_by(make) %>%
+  dplyr::summarize(mean_msrp = mean(msrp)) %>% top_n(5) %>%
+  kable()
+```
+
+As we saw in the graph for Total Distribution of MSRP, most msrps are within a certain range, but this table shows the outlier makes with msrp's that lie beyond the typical range.These outlier makes shown in the table are the top 5 makes with the highest average msrp's. It is no surpise that all 5 are expensive luxury vehicles.
+
+#### Summarize IRS Data
+
+N1, MARS1, MARS2, MARS4, NUMDEP, and A00100 are all variables that describe aggregate values for each zipcode. N1 is the total number of returns, MARS1 is the number of single filer returns, MARS2 is the number of joint returns with a married filing status, MARS4 is the number of head of household filer returns, A00100 is the adjusted gross income. N1 is the total number of returns and it is the sum of MARS1, MARS2, and MARS4 which are all types of filers tht submt returns. Individuals can file as a single filer if they are unmarried and do not qualify as a Head of Household. Head of Household filers are filers who are married to nonresident aliens and pay more than half the cost of upkeeping the home that they and a relative live in. An individual can also file as a head of household if they are un-married and pay for more than half the cost of keeping up a home for a qualifying person. Individuals can file as married filing jointly if they are married and do not want to file seperately as married status filing single. The adjusted gross income is the zipcodes total gross income minus deductions. NUMDEP is the number of dependents in a zipcode. Dependents are qualifying individuals who are relatives or siblings of the filer that are either under the age of 19, are under the age of 24 and are full time students, or are permanently disabled children of filers. 
+
+```{r echo=FALSE, warning=FALSE}
+irs_new1 <- as.data.frame(irs_new)
+irs_new1 <- irs_new1 %>% mutate(propsingle = (single_status)/(returns)) 
+irs_new1 <- irs_new1 %>% mutate(propmarried = (married_status)/(returns))
+irs_new1 <- irs_new1 %>% mutate(prophead = (head_of_household)/(returns))
+
+#ggplot(irs_new1) + geom_smooth(aes(x=propsingle, y=AGI), color = "red") 
+#ggplot(irs_new1) + geom_smooth(aes(x=propmarried, y= AGI), color= "steelblue")
+
+ggplot(irs_new1) + geom_smooth(aes(x=prophead, y= AGI), color = "green") + labs(x="Proportion of Head of Household Filers", title = "Relationship Between Proportion of Head Filers and AGI") + theme_minimal()
+                                                                                                
+```
+
+
+This graph shows that as the proportion of head of household filers in a zipcode increases, the zipcode's AGI decreases. This may be because filers filing as head of household have more tax exemptions that are deducted from there gross income thus lowering their adjusted gross income which is their taxable income. Also, head of household filers are married to nonresident aliens and may be more likely to be minorities which tend to have lower incomes. For this graph and following graphs, I have chosen to use the proportion of a type of filer (type of filer / total returns) in a zipcode rather than just the number of a type of filer in a zipcode. In doing so, I try to compensate for how a zipcode with lots of people will also, by virtue of its larger size, have lots of head of household filers. The relationship, then, between the number of head of household filers and AGI may reflect the relationship between a zipcode's size of population and AGI more than it does the relationship between how a certain type of filer in a ZIPCODE relates to its AGI. 
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(irs_new1) + geom_point(aes(x = propmarried, y = AGI), color = "lightslateblue", position = "jitter") + labs(x = "Proportion of Joint Married Filers", y = "Adjusted Gross Income", title = "Relationship Between Number of Joint Married Filers and AGI") 
+```
+
+This plot shows the relationship between the proportion of married filers in a zipcodes and a zipcode's AGI. As the number of married filers in a zipcode increases, the zipcode's AGI increases aswell. This may be because the zipcodes in the data set with lots of married filers are suburbs of upper-middle class families which have generally higher incomes.
+
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(irs_new1) + geom_smooth(aes(x = prophead, y = NUMDEP), color = "chocolate1") + labs(x = "Proportion of Head Filers", y = "Number of Dependents", title = "Relationship Between Head Filers and Number of Dependents") + theme_minimal() 
+
+```
+
+The proportion of head of household filers is positvely correlated with a zipcode's number of dependents.As the proportion of the head of household filers in a zipcode increases, so does the number of dependents. This makes sense because one of the ways for an individual to qualify as a head of household is to be paying for more than half the cost of a home that is keeping up a qualifying individual. Many of the requirements of these qualifying individual are also requirements of dependents.  
+
+
+```{r echo= FALSE, warning=FALSE}
+ggplot(irs_new) + geom_point(aes(x = returns, y = AGI), color = "steelblue") + labs(x = "Number of Returns", y = "AGI", title = "Relationship Between Number of Returns and Adjusted Gross Income") + geom_smooth(aes(x=returns, y = AGI), color = "deepskyblue4") + geom_abline(slope = 26.07, intercept = 651704.96, color = "red") + theme_minimal()
+
+trendline <- lm(AGI ~ returns, data  = irs_new)
+```
+
+For most zipcodes, as the number of returns increases there is a small increase in the zipcodes adjusted gross income. As the red regression line shows, a zipcode's number of returns and adjusted gross income are positevly related. While this relationship is very much expected because zipcodes with more people have more incomes to comprise its aggregate AGI, we can inspect  the points on the graph that lie above the trend line to find the zipcodes of wealthier areas. Despite not having a lot of returns, these still have large adjusted gross incomes indiciating that the filers in the zipcode have larger adjusted gross incomes than the filers of other zipcodes. The points above the red trend line in the graph belong to higher income zipcodes, and the points below the red trend line belong to zipcodes with lower incomes. 
+
+
+#### Summarize Cell Towers Data
+
+(1)
+
+#### Zipcodes With Most Cell Towers
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+celltowers_new %>% group_by(ZIP) %>% 
+  dplyr::summarise(number_of_towers = n()) %>%
+  top_n(6) %>%
+  arrange(desc(number_of_towers)) %>%
+  kable()
+```
+
+
+The zipcodes with the most cell towers are 91042, 90275, 90012, 91211, 90045, and 91759. This is likely because these zipcodes stretch over larger geographical areas and are more populated heavily. They have more cell towers to accomodate the demand of their respective populations.
+
+
+#### Zipcodes With Least Cell Towers
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+celltowers_new %>% group_by(ZIP) %>% 
+  dplyr:: summarise(number_of_towers = n()) %>%
+  top_n(-5)  %>% head() %>% kable()
+```
+
+The zipcodes with the least number of cell towers all have just 1 cell tower. There are 47 zipcodes in the cell towers data that have  just 1 cell tower, and this table displays just 6 of them.
+
+(2) 
+
+#### Names of Cities in Zipcode with the Most Cell Towers
+```{r echo=FALSE, warning=FALSE}
+celltowers_new$city <- as.character(celltowers_new$city)
+celltowers_new$city[celltowers_new$city == "7920 Sunset Blvd"] <- "Los Angeles"
+celltowers_new$city[celltowers_new$city == "La Cresentna"] <- "La Crescenta"
+celltowers_new$city[celltowers_new$city == "lacrescenta"] <- "La Crescenta"
+celltowers_new$city[celltowers_new$city == "Lacrescenta"] <- "La Crescenta"
+celltowers_new$city[celltowers_new$city == "Lacrescenta"] <- "La Crescenta"
+celltowers_new$city[celltowers_new$city == "La Cresenta"] <- "La Crescenta"
+celltowers_new$city[celltowers_new$city == "Montrous"] <- "Montrose"
+celltowers_new$city[celltowers_new$city == "Mt Lukens"] <- "Mount Lukens"
+celltowers_new$city[celltowers_new$city == "Tijunga"] <- "Tujunga"
+celltowers_new$city[celltowers_new$city == "Sunland"] <- "Tujunga"
+celltowers_new$city <- as.factor(celltowers_new$city)
+
+celltowers_new %>% filter(!is.na(city)) %>%
+  filter(ZIP == 91042) %>%
+  group_by(city) %>%
+  dplyr::summarise(number_towers_in_city = n()) %>%
+  kable()
+
+
+```
+
+In looking at all of the cities that lie within the zipcode with the most cell towers (91042), it is easy to understand why the zipcode has so many cell towers. The zipode contains multiple highly populated cities and it stretches over a wide area and has a higher demand for cell towers. 
+
+#### Join Your Data Files
+I Append the information in irs-la-zip.xls to the data in edmunds.dta using the zipcodes as a key to supplement the car leads observations with the IRS data.
+```{r echo=FALSE, warning=FALSE}
+
+edmunds_irs <- left_join(edmunds_new, irs_new, by = c("dealer_zip" = "ZIPCODE"))
+
+```
+
+
+Then, I  semi join this combined edmunds and IRS data with the the zipcodes with the most cell towers (91042, 90275, 90012, 91311, 90045 as seen from the table above titled Zipcodes With Most Celltowers). After semi-joining the Edmunds/IRS data with these top 5 zipcodes with the most cell towers, the Edmunds/IRS data has only 169 observations left of an initial 2445924 observations. This means that only 169 of the car leads in the Edmunds data were from zipcodes that had the the most cell towers.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+zipcodes <- data.frame(matrix(c(91042, 90275, 90012, 91211, 90045), nrow = 5, ncol = 1))
+colnames(zipcodes) <- c("zip")
+zipcodes$zip <- as.character(zipcodes$zip)
+semi_join <- semi_join(edmunds_irs, zipcodes, by = c("dealer_zip" = "zip"))
+```
+
+### Location of Cell Towers
+In order to visualize the location of the cell towers, I make a map using the longitude and latitude variables attached to each cell tower observation in the cell towers data.
+
+```{r echo=FALSE, warning=FALSE, messages= FALSE}
+leaflet(celltowers_new) %>% 
+  addTiles() %>%
+  #addMarkers(lng = ~longitude, lat = ~latitude, 
+           #  popup = ~city) %>%
+
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, radius = 8, color = "black",fillColor="red", stroke = TRUE, fillOpacity = 0.8, clusterOptions = markerClusterOptions()) 
+      #             popup = ~city,
+                   #color = ~pal(state), 
+            #       fillOpacity = .5,
+             #      stroke = FALSE)
+  #addCircleMarkers(data=data, lng=~LONG , lat=~LAT, radius=8 , color="black",  fillColor="red", stroke = TRUE, fillOpacity = 0.8, clusterOptions = markerClusterOptions()) 
+ # addProviderTiles("OpenTopoMap")
+```
+
+# Analysis
+
+### t-test
+
+I have chosen to compare the price that manufacturers suggest a car be sold for to the price that the cars are listed as. I chose these two variables because I am curious if the typical msrp price for a car is greater than a cars listed price. I imagine that since Edmunds shows visitors both values, that the average msrp prices would be greater than the average listed prices so that visitors to the Edmunds.com feel as though they are getting a good deal. In order to answer whether the msrp is typically greater than the listed price or not, I used a paired t test. I used a paired t-test because msrp and list price are two measurements on the same object (a certain car) so they are not independent of each other. Because there is a lack of independence between the two subjects, I use a paired t-test. 
+
+```{r echo=TRUE}
+ t.test(edmunds_new$msrp, edmunds_new$list_price, alternative = "greater", paired = TRUE)
+
+```
+ 
+Accourding to the t-test, we find that the difference in means is statistically significant. Our results suggest that the typical msrp price is greater than the typical list price for leads on Edmunds.com.  
+
+### Linear Regression
+
+In order to answer the question, "How are the number of dependents and the number of returns that are filed as “single” related?" I created a linear model for a graph with the Number of Single Filers as the x variable and the Number of Dependents as the y variable.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(irs_new1) + geom_point(aes(x = single_status, y = NUMDEP), color = "lightslateblue", position = "jitter") + labs(x = "Number of Single Filers", y = "Number of Dependents", title = "Relationship Between Single Filers and Number of Dependents") + geom_abline(slope = 1.679 , intercept = -953.068, color = "red") + theme_minimal()
+summary(lm(NUMDEP ~ single_status, data = irs_new))
+```
+Here I plotted the relationship between the number of single filers and the number of dependents in a zipcode. The slope is 1.679, indicating that the number of single filers and the number of dependents in a zipcode are positvely related. This is surpising because I would expect a zipcode with more single filers to have less dependents because single filers typically do have kids. The lurking variable that may be impacting both variables is the population size of a zipcode. If a zipcode has a large population, by virtue of its larger size alone, the zipcode can be expected to have more of single filers. Similarly, zipcodes with a large population can also be expected to have more number of dependents. Therefore, the positive relationship between number of single filers and zipcodes may actually reflect how zipcodes with larger populations have both more single filers and more number of dependents.The multiple R squared value for the regression line is 0.526, indicating that just over 50% of the variation in the NUmber of Dependents can be explained by the Number of Single Filers.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(irs_new1) + geom_point(aes(x = propsingle, y = NUMDEP), color = "lightslateblue", position = "jitter") + labs(x = "Proportion of Single Filers", y = "Number of Dependents", title = "Proportion of Single Filers and Number of Dependents") + geom_abline(slope = -43956 , intercept = 34323, color = "red") + theme_minimal()
+summary(lm(NUMDEP ~ propsingle, data = irs_new1))
+```
+
+Here I plotted the relationship between the *proportion* of single filers in a zipcode and the number of dependents in order to account for how zipcodes with more single filers may just be zipcodes with larger populations and therefore will have greater number of dependents just because the size of the zipcode's population is greater. In plotting the proportion of single filers we see how an increase in just single filers relative to the total number of returns in a zipcode is related to number of dependents. As the proportion of single filers in a zipcode increases, the number of dependents in the zipcode decreases. The proportion of single filers in a zipcode is negatively related to its number of dependents.This is expected because single filers probably do not have kids so as the proportion of single filers in a zipcode increases the less number of dependents the zipcode will have because its filers are less likely to have kids. The slope of this plot's regression line is negative indicating this expected negative relationship. The multiple R squared value is 0.1428 which means that about 14% of the variation in the number of dependents can be explained by a zipcodes proportion of single filers. This is not a very strong correlation, and we need to take into account how  zipcodes can very in their number of dependents greatly, where as the proportion of single filers in a zipcode rarley goes below 40%. 
+
+
+#### Functions
+
+Below I create a function, called getinfo, that takes a vector of zip codes as inputs and outputs a table that describes, for each zip code, the number of cell towers in that zip code, the total number of filed tax returns (MARS1, MARS2 & MARS4) and the number of car leads that came from that zip code.
+
+```{r warning = FALSE}
+  getinfo <- function(x) {
+    # stop function if the input is not a vector
+if (!is.vector(x)) {
+  stop("x needs to be a vectotr")
+} 
+    # stop function if input is not numeric because the zipcode inputs should be numeric to match with the zipcodes in the data sets to retrieve the information
+    if (!is.numeric(x)) {
+      stop("x needs to be numeric")
+    }
+    
+  # create a for loop to run for every value given in the vector
+    for (i in 1:length(x)) {
+    # designate the indice of input as the code that information is being calculated for
+    code <- x[i]
+    
+    # if the code given is in the cell towers data, then perform the following operation
+  if (code %in% celltowers_new$ZIP) {
+    
+    # filter the cell towers data for only zipcodes that have been provided, then summarize the number of towers in each zipcode and assign the number of towers to celltowers
+    celltowers <- celltowers_new %>% filter(ZIP %in% x) %>% group_by(ZIP) %>% dplyr::summarize(number_of_towers = n())
+  }
+    # let us know if the zipcodes provided were not found in the cell towers data 
+    else {
+      message("input not a zipcode in cell towers data")
+      next
+    }
+    # if the code provided is in the irs data, summarize the number of returns for each value
+    if (code %in% irs_new$ZIPCODE) {
+      returns <- irs_new %>% filter(ZIPCODE %in% x) %>% group_by(ZIPCODE) %>% dplyr::summarize(number_of_returns = returns)
+    } 
+    # if the code  is not in the irs data, let us know.
+    else {
+      message("input not a zipcode in irs data")
+    }
+    
+    # if the code is in the edmunds data, summarize the number of leads that the zip code has and assign it to the object car leads
+    if (code %in% edmunds_new$dealer_zip) {
+      carleads <- edmunds_new %>% filter(dealer_zip %in% x) %>% group_by(dealer_zip) %>% dplyr::summarize(number_of_leads = n())
+    } else { 
+        message("input not a zipcode in edmunds data")
+      }
+    }
+    # after looping through each code in the given vector of zipcodes, turn the accumulated values in celltowers, returns, and car leads for each zipcode into data frames
+    celltowersdf <- as.data.frame(celltowers)
+    returnsdf <- as.data.frame(returns)
+    carleadsdf  <- as.data.frame(carleads)
+    # then, join the cell towers data frame and returns data frame together by using the zipcodes as the key
+    join <- full_join(celltowersdf,returnsdf, by = c("ZIP"="ZIPCODE"))
+    # finally, join the joint data frame with celltowers values and returns values with the car leads data frame to get one data frame with columns for the three desired values of each given zipcode: cell towers, returns, and car leads
+    alljoin <- full_join(join, carleadsdf, by = c("ZIP" = "dealer_zip"))
+    # return this data frame to us
+    return(kable(alljoin))
+  }
+
+```
+
+
+
+# Results & Conclusions
+
+The results of the t-test on the msrp prices and listed prices gave a p-value < 2.2e-16. This is less than .05 so the results of the t-test are statistically significant. If the typical values for msrp and list price were equal, the odds of getting the difference in means that we did is less than the odds of getting it by chance indicating that  the difference in our means is statistically significant. This means that we can reject the null hypothesis in favor of the alternative hypothesis that the msrp prices are greater than the list prices. In context, this means that visitors to Edmunds.com typically see cars listed at prices that are lower than the price that manufacturers suggest they be sold at. This creates a perception for visitors to Edmunds.com that they are getting a good deal on their desired car, and it probabaly makes visitors more inclined to purchase the car. 
+
+
+The slope coefficient of my linear model is 1.679, indicating that the number of single filers and the number of dependents in a zipcode are positvely related. The multiple R squared value for the regression line is 0.526, which means that about half of the variation in the number of dependents in a zipode can be explained by number of single filers in a zipcode. This is surpising because I would expect a zipcode with more single filers to have less dependents because single filers typically do not have kids. The lurking variable that may be impacting both variables is the population size of a zipcode. Because if a zipcode has a large population, by virtue of its larger size alone, the zipcode can be expected to have lots of single filers. Similarly, zipcodes with a large population can also be expected to have more number of dependents. Therefore, the positive relationship between number of single filers and zipcodes may actually reflect how zipcodes with larger populations have both more single filers and more number of dependents.
+
+To show that the function I've created to take an input of zipcodes and output the zipcodes' number of car leads, cell towers, and tax returns works, I test the function with some values that are in all the data sets and some values that are not. 
+
+```{r warning=FALSE}
+x <- c(90015, 90304, 90505)
+getinfo(x)
+
+
+```
+
+```{r echo=FALSE}
+merryxmasjames <- function(N){
+  filler = "*"
+  blank = ""
+  
+  for (i in 1:N){
+    row = c(sample(blank,N-i,replace=T),sample(filler,i,replace=T),sample(blank,N-i,replace=T))
+    cat(row,"\n")
+  }   
+  cat(c(sample(blank,(N-1),replace=T),sample(filler,1,replace=T),sample(blank,(N-1),replace=T)),"\n")
+} # I hope knitting this file wasn't too much trouble for you. Thanks for a great quarter and
+merryxmasjames(10)
+```
+
+
+
